@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>番茄钟 - Pomodoro Timer</title>
+<style>
+  /* ══════════════════════════════════════════════════
+     CSS 变量 — 全局设计令牌
+     ══════════════════════════════════════════════════ */
+  :root {
+    --bg: #0f0f1a;
+    --surface: #1a1a2e;
+    --surface2: #222240;
+    --text: #e8e8f0;
+    --text-secondary: #8888aa;
+    --text-muted: #5a5a7a;
+    --border: #2a2a48;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* 模式配色 */
+  :root {
+    --work: #ff6b6b;
+    --work-glow: rgba(255, 107, 107, 0.35);
+    --work-bg: rgba(255, 107, 107, 0.08);
+    --study: #7c5cfc;
+    --study-glow: rgba(124, 92, 252, 0.35);
+    --study-bg: rgba(124, 92, 252, 0.08);
+    --entertain: #20c997;
+    --entertain-glow: rgba(32, 201, 151, 0.35);
+    --entertain-bg: rgba(32, 201, 151, 0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 背景光晕 */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-glow, var(--work-glow)) 0%, transparent 65%);
+    pointer-events: none;
+    transition: background var(--transition);
+    z-index: 0;
+  }
+
+  /* ══════════════════════════════════════════════════
+     主窗口布局
+     ══════════════════════════════════════════════════ */
+  .app-main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    padding: 20px;
+    max-width: 560px;
+    width: 100%;
+  }
+
+  .app-logo {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, var(--accent, var(--work)), var(--accent-secondary, #ff8e8e));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ─── 模式卡片 ─────────────────────────────────── */
+  .section-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    align-self: flex-start;
+  }
+
+  .mode-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+  }
+
+  .mode-card {
+    position: relative;
+    padding: 20px 14px 16px;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 2px solid var(--border);
+    cursor: pointer;
+    text-align: center;
+    transition: all var(--transition);
+    overflow: hidden;
+  }
+
+  .mode-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+
+  .mode-card:hover {
+    border-color: var(--mode-color);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px var(--mode-glow);
+  }
+
+  .mode-card.selected {
+    border-color: var(--mode-color);
+    background: var(--mode-bg);
+    box-shadow: 0 0 0 4px var(--mode-glow);
+  }
+
+  .mode-card .mode-icon {
+    font-size: 2.4rem;
+    margin-bottom: 6px;
+    transition: transform var(--transition);
+  }
+
+  .mode-card:hover .mode-icon {
+    transform: scale(1.12);
+  }
+
+  .mode-card .mode-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .mode-card .mode-duration {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .mode-card .mode-detail {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .mode-card .check-mark {
+    position: absolute;
+    top: 8px; right: 10px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--mode-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: #fff;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all var(--transition);
+  }
+
+  .mode-card.selected .check-mark {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* ─── 启动按钮 ─────────────────────────────────── */
+  .launch-section {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .btn-launch {
+    width: 100%;
+    padding: 18px 32px;
+    border-radius: var(--radius);
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    background: var(--accent, var(--work));
+    color: #fff;
+    box-shadow: 0 6px 28px var(--accent-glow, var(--work-glow));
+    transition: all var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .btn-launch:hover {
+    box-shadow: 0 8px 36px var(--accent-glow, var(--work-glow));
+    transform: translateY(-2px);
+  }
+
+  .btn-launch:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .btn-launch.popup-open {
+    background: transparent;
+    border: 2px solid var(--accent, var(--work));
+    color: var(--accent, var(--work));
+    box-shadow: none;
+  }
+
+  .btn-launch.popup-open:hover {
+    background: var(--accent, var(--work));
+    color: #fff;
+    box-shadow: 0 8px 36px var(--accent-glow, var(--work-glow));
+  }
+
+  .popup-status {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 20px;
+  }
+
+  .popup-status .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent, var(--work));
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* ─── 设置按钮 ─────────────────────────────────── */
+  .settings-trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    background: var(--surface);
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    transition: all var(--transition);
+    margin-top: -8px;
+  }
+
+  .settings-trigger:hover {
+    color: var(--text);
+    border-color: var(--border);
+  }
+
+  /* ─── 设置面板 ─────────────────────────────────── */
+  .settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition);
+  }
+
+  .settings-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .settings-panel {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 380px;
+    height: 100vh;
+    background: var(--surface);
+    z-index: 11;
+    padding: 36px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+  }
+
+  .settings-panel.open { right: 0; }
+
+  .settings-panel h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .settings-panel .close-btn {
+    position: absolute;
+    top: 24px; right: 24px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface2);
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .settings-panel .close-btn:hover {
+    color: var(--text);
+    background: #333355;
+  }
+
+  .setting-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .setting-group > label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .setting-row input {
+    flex: 1;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 1rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+  }
+
+  .setting-row input:focus {
+    outline: none;
+    border-color: var(--accent, var(--work));
+  }
+
+  .setting-row .unit {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    min-width: 30px;
+  }
+
+  .setting-hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .btn-save {
+    width: 100%;
+    padding: 14px;
+    border-radius: var(--radius-sm);
+    border: none;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    background: var(--accent, var(--work));
+    color: #fff;
+    margin-top: 8px;
+    transition: all var(--transition);
+  }
+
+  .btn-save:hover {
+    box-shadow: 0 4px 16px var(--accent-glow, var(--work-glow));
+  }
+
+  .btn-reset {
+    width: 100%;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: all var(--transition);
+  }
+
+  .btn-reset:hover {
+    color: var(--text);
+    border-color: #444466;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    padding: 13px 26px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 500;
+    z-index: 20;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--border);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ══════════════════════════════════════════════════
+     弹出窗口 (Popup) 样式
+     ══════════════════════════════════════════════════ */
+  .app-popup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 24px 16px 16px;
+    min-width: 280px;
+    max-width: 340px;
+    background: var(--bg);
+  }
+
+  .popup-mode-label {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--accent, var(--work));
+    padding: 6px 18px;
+    border-radius: 16px;
+    background: var(--surface);
+    border: 1px solid var(--accent, var(--work));
+    transition: all var(--transition);
+  }
+
+  /* 圆形进度环 */
+  .timer-ring-wrap {
+    position: relative;
+    width: 230px;
+    height: 230px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .timer-ring-wrap svg {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .popup-progress-bg {
+    fill: none;
+    stroke: var(--surface2);
+    stroke-width: 10;
+  }
+
+  .popup-progress-ring {
+    fill: none;
+    stroke: var(--accent, var(--work));
+    stroke-width: 10;
+    stroke-linecap: round;
+    transition: stroke var(--transition), stroke-dashoffset 0.15s linear;
+    filter: drop-shadow(0 0 6px var(--accent-glow, var(--work-glow)));
+  }
+
+  .popup-timer-display {
+    font-size: 3.6rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    z-index: 2;
+  }
+
+  .popup-timer-display.paused {
+    opacity: 0.55;
+  }
+
+  /* 进度圆点 */
+  .popup-session-dots {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .popup-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--surface2);
+    transition: all var(--transition);
+  }
+
+  .popup-dot.done {
+    background: var(--accent, var(--work));
+    box-shadow: 0 0 6px var(--accent-glow, var(--work-glow));
+  }
+
+  .popup-dot.current {
+    background: var(--accent, var(--work));
+    animation: dot-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.7; }
+    50% { transform: scale(1.25); opacity: 1; }
+  }
+
+  .popup-session-label {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-left: 2px;
+  }
+
+  /* 控制按钮 */
+  .popup-controls {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .popup-btn {
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    outline: none;
+  }
+
+  .popup-btn:active { transform: scale(0.94); }
+
+  .popup-btn-start {
+    min-width: 120px;
+    padding: 12px 30px;
+    border-radius: 24px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: var(--accent, var(--work));
+    color: #fff;
+    box-shadow: 0 4px 18px var(--accent-glow, var(--work-glow));
+    transition: all var(--transition);
+  }
+
+  .popup-btn-start:hover {
+    box-shadow: 0 6px 24px var(--accent-glow, var(--work-glow));
+    transform: translateY(-1px);
+  }
+
+  .popup-btn-start.running {
+    background: transparent;
+    border: 2px solid var(--accent, var(--work));
+    color: var(--accent, var(--work));
+    box-shadow: none;
+  }
+
+  .popup-btn-start.running:hover {
+    background: var(--accent, var(--work));
+    color: #fff;
+    box-shadow: 0 6px 24px var(--accent-glow, var(--work-glow));
+  }
+
+  .popup-btn-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+  }
+
+  .popup-btn-icon:hover {
+    color: var(--text);
+    border-color: var(--surface2);
+    background: var(--surface2);
+  }
+
+  /* 响应式 */
+  @media (max-width: 500px) {
+    .mode-cards {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .settings-panel {
+      width: 100%;
+      right: -100%;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════
+     主窗口视图 (id="mainView")
+     ═══════════════════════════════════════════════ -->
+<div class="app-main" id="mainView">
+  <div class="app-logo">🍅 Pomodoro</div>
+
+  <div class="section-title">选择专注模式</div>
+
+  <div class="mode-cards" id="modeCards">
+    <!-- 工作 -->
+    <div class="mode-card selected" data-mode="work"
+         style="--mode-color: var(--work); --mode-glow: var(--work-glow); --mode-bg: var(--work-bg);">
+      <div class="check-mark">✓</div>
+      <div class="mode-icon">💼</div>
+      <div class="mode-name">工作</div>
+      <div class="mode-duration">25 分钟</div>
+      <div class="mode-detail">休息 5min · 4轮长休</div>
+    </div>
+
+    <!-- 学习 -->
+    <div class="mode-card" data-mode="study"
+         style="--mode-color: var(--study); --mode-glow: var(--study-glow); --mode-bg: var(--study-bg);">
+      <div class="check-mark">✓</div>
+      <div class="mode-icon">📚</div>
+      <div class="mode-name">学习</div>
+      <div class="mode-duration">45 分钟</div>
+      <div class="mode-detail">休息 10min · 3轮长休</div>
+    </div>
+
+    <!-- 娱乐 -->
+    <div class="mode-card" data-mode="entertain"
+         style="--mode-color: var(--entertain); --mode-glow: var(--entertain-glow); --mode-bg: var(--entertain-bg);">
+      <div class="check-mark">✓</div>
+      <div class="mode-icon">🎮</div>
+      <div class="mode-name">娱乐</div>
+      <div class="mode-duration">30 分钟</div>
+      <div class="mode-detail">到时提醒 · 单次计时</div>
+    </div>
+  </div>
+
+  <div class="launch-section">
+    <button class="btn-launch" id="btnLaunch">▶ 弹出计时器</button>
+    <div class="popup-status" id="popupStatus"></div>
+  </div>
+
+  <button class="settings-trigger" id="btnSettings">⚙ 自定义设置</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     弹出窗口视图 (id="popupView")
+     ═══════════════════════════════════════════════ -->
+<div class="app-popup" id="popupView" style="display:none;">
+  <div class="popup-mode-label" id="popupModeLabel">工作中</div>
+
+  <div class="timer-ring-wrap">
+    <svg viewBox="0 0 230 230">
+      <circle class="popup-progress-bg" cx="115" cy="115" r="106"/>
+      <circle class="popup-progress-ring" id="popupProgressRing" cx="115" cy="115" r="106"/>
+    </svg>
+    <div class="popup-timer-display" id="popupTimerDisplay">25:00</div>
+  </div>
+
+  <div class="popup-session-dots" id="popupSessionDots">
+    <span class="popup-dot done"></span>
+    <span class="popup-dot"></span>
+    <span class="popup-dot"></span>
+    <span class="popup-dot"></span>
+    <span class="popup-session-label">第 1 轮</span>
+  </div>
+
+  <div class="popup-controls">
+    <button class="popup-btn popup-btn-icon" id="popupBtnSkip" title="跳过 (S)">⏭</button>
+    <button class="popup-btn popup-btn-start" id="popupBtnStart">开始</button>
+    <button class="popup-btn popup-btn-icon" id="popupBtnReset" title="重置 (R)">↺</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     设置面板
+     ═══════════════════════════════════════════════ -->
+<div class="settings-overlay" id="settingsOverlay"></div>
+<div class="settings-panel" id="settingsPanel">
+  <button class="close-btn" id="btnCloseSettings">✕</button>
+  <h2>⚙ 自定义设置</h2>
+
+  <div class="setting-group">
+    <label>专注时长</label>
+    <div class="setting-row">
+      <input type="number" id="setFocus" min="1" max="180" value="25">
+      <span class="unit">分钟</span>
+    </div>
+  </div>
+
+  <div class="setting-group">
+    <label>短休息时长</label>
+    <div class="setting-row">
+      <input type="number" id="setShortBreak" min="1" max="60" value="5">
+      <span class="unit">分钟</span>
+    </div>
+  </div>
+
+  <div class="setting-group">
+    <label>长休息时长</label>
+    <div class="setting-row">
+      <input type="number" id="setLongBreak" min="1" max="120" value="15">
+      <span class="unit">分钟</span>
+    </div>
+  </div>
+
+  <div class="setting-group">
+    <label>长休息间隔</label>
+    <div class="setting-row">
+      <input type="number" id="setLongInterval" min="1" max="10" value="4">
+      <span class="unit">轮</span>
+    </div>
+    <span class="setting-hint">完成 N 轮专注后进入一次长休息</span>
+  </div>
+
+  <button class="btn-save" id="btnSaveSettings">保存设置</button>
+  <button class="btn-reset" id="btnResetSettings">恢复默认</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ═══════════════════════════════════════════════
+  //  工具函数
+  // ═══════════════════════════════════════════════
+  const $ = (sel, ctx) => (ctx || document).querySelector(sel);
+  const CLAMP = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  // ═══════════════════════════════════════════════
+  //  模式定义
+  // ═══════════════════════════════════════════════
+  const MODE_TYPES = {
+    work:      { id: 'work',      icon: '💼', name: '工作', accent: '--work',      glow: '--work-glow',      bg: '--work-bg' },
+    study:     { id: 'study',     icon: '📚', name: '学习', accent: '--study',     glow: '--study-glow',     bg: '--study-bg' },
+    entertain: { id: 'entertain', icon: '🎮', name: '娱乐', accent: '--entertain', glow: '--entertain-glow', bg: '--entertain-bg' },
+  };
+
+  const MODE_DEFAULTS = {
+    work:      { focus: 25, shortBreak: 5,  longBreak: 15, longInterval: 4, hasBreaks: true },
+    study:     { focus: 45, shortBreak: 10, longBreak: 20, longInterval: 3, hasBreaks: true },
+    entertain: { focus: 30, shortBreak: 5,  longBreak: 15, longInterval: 99, hasBreaks: false },
+  };
+
+  const BREAK = { SHORT: 'shortBreak', LONG: 'longBreak' };
+
+  // ═══════════════════════════════════════════════
+  //  全局状态
+  // ═══════════════════════════════════════════════
+  const IS_POPUP = new URLSearchParams(location.search).get('popup') === '1';
+  let selectedMode = loadPref('selectedMode', 'work');
+  let customSettings = loadCustomSettings();
+  let popupWindow = null;
+  let channel = null;
+  let popupConnected = false;
+
+  // ═══════════════════════════════════════════════
+  //  持久化
+  // ═══════════════════════════════════════════════
+  function loadPref(key, fallback) {
+    try {
+      const v = localStorage.getItem('pomodoro-' + key);
+      return v !== null ? JSON.parse(v) : fallback;
+    } catch { return fallback; }
+  }
+
+  function savePref(key, val) {
+    try { localStorage.setItem('pomodoro-' + key, JSON.stringify(val)); } catch {}
+  }
+
+  function loadCustomSettings() {
+    const def = MODE_DEFAULTS[selectedMode];
+    return {
+      focus:       loadPref('focus-' + selectedMode, def.focus),
+      shortBreak:  loadPref('shortBreak-' + selectedMode, def.shortBreak),
+      longBreak:   loadPref('longBreak-' + selectedMode, def.longBreak),
+      longInterval: loadPref('longInterval-' + selectedMode, def.longInterval),
+    };
+  }
+
+  function saveCustomSettings() {
+    savePref('focus-' + selectedMode, customSettings.focus);
+    savePref('shortBreak-' + selectedMode, customSettings.shortBreak);
+    savePref('longBreak-' + selectedMode, customSettings.longBreak);
+    savePref('longInterval-' + selectedMode, customSettings.longInterval);
+  }
+
+  function getSettings() {
+    return { ...customSettings, hasBreaks: MODE_DEFAULTS[selectedMode].hasBreaks };
+  }
+
+  function applyAccent(mode) {
+    const m = MODE_TYPES[mode];
+    document.documentElement.style.setProperty('--accent', `var(${m.accent})`);
+    document.documentElement.style.setProperty('--accent-glow', `var(${m.glow})`);
+    document.documentElement.style.setProperty('--accent-secondary', `var(${m.accent})`);
+  }
+
+  // ═══════════════════════════════════════════════
+  //  计时器核心类（弹出窗口使用）
+  // ═══════════════════════════════════════════════
+  class PomodoroTimer {
+    constructor() {
+      this.mode = selectedMode;
+      this.session = 'focus'; // 'focus' | 'shortBreak' | 'longBreak'
+      this.totalSeconds = 0;
+      this.remainingSeconds = 0;
+      this.completedSessions = 0;
+      this.totalCompleted = 0;
+      this.timerId = null;
+      this.running = false;
+
+      // DOM refs (popup only)
+      this.$ring    = $('#popupProgressRing');
+      this.$display = $('#popupTimerDisplay');
+      this.$label   = $('#popupModeLabel');
+      this.$dots    = $('#popupSessionDots');
+      this.$btnStart = $('#popupBtnStart');
+      this.$btnSkip  = $('#popupBtnSkip');
+      this.$btnReset = $('#popupBtnReset');
+
+      this.circumference = 2 * Math.PI * 106; // r=106
+      if (this.$ring) {
+        this.$ring.style.strokeDasharray = this.circumference;
+        this.$ring.style.strokeDashoffset = '0';
+      }
+
+      this.reset();
+    }
+
+    get settings() { return getSettings(); }
+
+    reset() {
+      this.stop();
+      this.session = 'focus';
+      this.completedSessions = 0;
+      this.totalSeconds = this.settings.focus * 60;
+      this.remainingSeconds = this.totalSeconds;
+      this.updateAll();
+      this.updateButton();
+    }
+
+    start() {
+      if (this.running) return;
+      this.running = true;
+      this.updateButton();
+      this.timerId = setInterval(() => this.tick(), 1000);
+    }
+
+    pause() {
+      this.running = false;
+      if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
+      this.updateButton();
+      if (this.$display) this.$display.classList.add('paused');
+    }
+
+    stop() {
+      this.running = false;
+      if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
+      if (this.$display) this.$display.classList.remove('paused');
+    }
+
+    toggle() {
+      this.running ? this.pause() : this.start();
+    }
+
+    skip() {
+      this.stop();
+      this.handleComplete();
+    }
+
+    tick() {
+      this.remainingSeconds--;
+      this.updateDisplay();
+      this.updateRing();
+      this.updateTitle();
+      if (this.remainingSeconds <= 0) {
+        this.handleComplete();
+      }
+    }
+
+    handleComplete() {
+      this.stop();
+      playBeep();
+
+      if (this.session === 'focus') {
+        this.completedSessions++;
+        this.totalCompleted++;
+
+        if (this.settings.hasBreaks && this.completedSessions >= this.settings.longInterval) {
+          this.completedSessions = 0;
+          this.session = BREAK.LONG;
+        } else if (this.settings.hasBreaks) {
+          this.session = BREAK.SHORT;
+        } else {
+          // 娱乐模式：无休息，重新开始计时
+          this.session = 'focus';
+        }
+      } else {
+        this.session = 'focus';
+      }
+
+      this.totalSeconds = this.getSessionSeconds();
+      this.remainingSeconds = this.totalSeconds;
+      this.updateAll();
+      this.updateButton();
+      this.flashDisplay();
+      this.sendState();
+      notifyUser();
+    }
+
+    getSessionSeconds() {
+      switch (this.session) {
+        case 'focus':      return this.settings.focus * 60;
+        case BREAK.SHORT:  return this.settings.shortBreak * 60;
+        case BREAK.LONG:   return this.settings.longBreak * 60;
+        default:           return 25 * 60;
+      }
+    }
+
+    setMode(mode) {
+      this.mode = mode;
+      applyAccent(mode);
+      this.reset();
+    }
+
+    applySettings(s) {
+      // handled via getSettings() dynamically
+    }
+
+    // ─── 显示 ──────────────────────────────────
+    format(sec) {
+      const m = Math.floor(sec / 60), s = sec % 60;
+      return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    updateAll() {
+      this.updateDisplay();
+      this.updateRing();
+      this.updateLabel();
+      this.updateDots();
+      this.updateTitle();
+    }
+
+    updateDisplay() {
+      if (this.$display) this.$display.textContent = this.format(this.remainingSeconds);
+    }
+
+    updateRing() {
+      if (!this.$ring) return;
+      const elapsed = this.totalSeconds - this.remainingSeconds;
+      const frac = this.totalSeconds > 0 ? elapsed / this.totalSeconds : 0;
+      this.$ring.style.strokeDashoffset = this.circumference * (1 - frac);
+    }
+
+    updateLabel() {
+      if (!this.$label) return;
+      const modeInfo = MODE_TYPES[this.mode];
+      const labels = {
+        focus: modeInfo.icon + ' ' + modeInfo.name + '中',
+        shortBreak: '☕ 短休息',
+        longBreak: '🌴 长休息',
+      };
+      this.$label.textContent = labels[this.session] || labels.focus;
+    }
+
+    updateDots() {
+      if (!this.$dots) return;
+      const dots = this.$dots.querySelectorAll('.popup-dot');
+      const total = this.settings.hasBreaks ? this.settings.longInterval : 1;
+      dots.forEach((dot, i) => {
+        dot.classList.remove('done', 'current');
+        if (i < this.completedSessions) dot.classList.add('done');
+      });
+      if (this.session === 'focus' && this.completedSessions < total) {
+        dots[this.completedSessions]?.classList.add('current');
+      }
+      const lbl = this.$dots.querySelector('.popup-session-label');
+      if (lbl) lbl.textContent = `第 ${Math.min(this.completedSessions + 1, total)} 轮`;
+    }
+
+    updateTitle() {
+      const label = this.$label ? this.$label.textContent : '';
+      const state = this.running ? '' : ' ⏸';
+      document.title = `${this.format(this.remainingSeconds)} - ${label}${state}`;
+    }
+
+    updateButton() {
+      if (!this.$btnStart) return;
+      if (this.running) {
+        this.$btnStart.textContent = '暂停';
+        this.$btnStart.classList.add('running');
+      } else if (this.remainingSeconds < this.totalSeconds) {
+        this.$btnStart.textContent = '继续';
+        this.$btnStart.classList.add('running');
+      } else {
+        this.$btnStart.textContent = '开始';
+        this.$btnStart.classList.remove('running');
+      }
+      if (this.$display) {
+        this.$display.classList.toggle('paused', !this.running && this.remainingSeconds < this.totalSeconds);
+      }
+    }
+
+    flashDisplay() {
+      if (!this.$display) return;
+      this.$display.style.transform = 'scale(1.1)';
+      this.$display.style.transition = 'transform 0.15s ease';
+      setTimeout(() => { this.$display.style.transform = 'scale(1)'; }, 150);
+    }
+
+    sendState() {
+      if (!channel) return;
+      channel.postMessage({
+        type: 'stateUpdate',
+        mode: this.mode,
+        session: this.session,
+        remainingSeconds: this.remainingSeconds,
+        totalSeconds: this.totalSeconds,
+        running: this.running,
+        completedSessions: this.completedSessions,
+        totalCompleted: this.totalCompleted,
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  音效
+  // ═══════════════════════════════════════════════
+  function playBeep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [523.25, 659.25, 783.99].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.18);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.18 + 0.35);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.18);
+        osc.stop(ctx.currentTime + i * 0.18 + 0.4);
+      });
+    } catch {}
+  }
+
+  // ═══════════════════════════════════════════════
+  //  通知
+  // ═══════════════════════════════════════════════
+  function notifyUser() {
+    if (!('Notification' in window)) return;
+    const send = () => {
+      const modeInfo = MODE_TYPES[selectedMode];
+      const title = `⏰ ${modeInfo.name}计时结束！`;
+      const body = '该休息一下了~ 打开番茄钟继续下一轮吧。';
+      try {
+        const n = new Notification(title, { body, requireInteraction: true });
+        setTimeout(() => n.close(), 8000);
+      } catch {}
+    };
+    if (Notification.permission === 'granted') send();
+    else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(p => { if (p === 'granted') send(); });
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  Toast
+  // ═══════════════════════════════════════════════
+  let toastTimer;
+  function showToast(msg) {
+    const $t = $('#toast');
+    if (!$t) return;
+    $t.textContent = msg;
+    $t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $t.classList.remove('show'), 2000);
+  }
+
+  // ═══════════════════════════════════════════════
+  //  BroadcastChannel
+  // ═══════════════════════════════════════════════
+  function setupChannel() {
+    try {
+      channel = new BroadcastChannel('pomodoro-sync');
+      channel.onmessage = (e) => {
+        const msg = e.data;
+        if (IS_POPUP) {
+          handlePopupMessage(msg);
+        } else {
+          handleMainMessage(msg);
+        }
+      };
+    } catch {
+      channel = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  主窗口逻辑
+  // ═══════════════════════════════════════════════
+  function initMain() {
+    applyAccent(selectedMode);
+    updateMainUI();
+
+    // 模式选择
+    $('#modeCards').addEventListener('click', (e) => {
+      const card = e.target.closest('.mode-card');
+      if (!card) return;
+      const mode = card.dataset.mode;
+      if (mode === selectedMode) return;
+      selectedMode = mode;
+      customSettings = loadCustomSettings();
+      savePref('selectedMode', selectedMode);
+      applyAccent(selectedMode);
+      updateMainUI();
+      syncSettingsToInputs();
+
+      // 同步到弹出窗口
+      if (popupConnected && channel) {
+        channel.postMessage({ type: 'switchMode', mode: selectedMode, settings: getSettings() });
+      }
+    });
+
+    // 弹出按钮
+    $('#btnLaunch').addEventListener('click', togglePopup);
+
+    // 设置
+    $('#btnSettings').addEventListener('click', openSettings);
+    $('#btnCloseSettings').addEventListener('click', closeSettings);
+    $('#settingsOverlay').addEventListener('click', closeSettings);
+    $('#btnSaveSettings').addEventListener('click', () => {
+      readSettingsFromInputs();
+      saveCustomSettings();
+      syncSettingsToInputs();
+      closeSettings();
+      updateMainUI();
+      if (popupConnected && channel) {
+        channel.postMessage({ type: 'updateSettings', settings: getSettings() });
+      }
+      showToast('设置已保存');
+    });
+    $('#btnResetSettings').addEventListener('click', () => {
+      const def = MODE_DEFAULTS[selectedMode];
+      customSettings = { focus: def.focus, shortBreak: def.shortBreak, longBreak: def.longBreak, longInterval: def.longInterval };
+      saveCustomSettings();
+      syncSettingsToInputs();
+      updateMainUI();
+      if (popupConnected && channel) {
+        channel.postMessage({ type: 'updateSettings', settings: getSettings() });
+      }
+      showToast('已恢复默认设置');
+    });
+
+    // 键盘
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.code === 'Escape') closeSettings();
+    });
+
+    // 检查弹出窗口是否还开着
+    setInterval(() => {
+      if (popupWindow && popupWindow.closed && popupConnected) {
+        popupConnected = false;
+        popupWindow = null;
+        updatePopupUI();
+      }
+    }, 500);
+
+    // 页面关闭前关闭弹窗
+    window.addEventListener('beforeunload', () => {
+      if (popupWindow && !popupWindow.closed) popupWindow.close();
+    });
+
+    syncSettingsToInputs();
+  }
+
+  function updateMainUI() {
+    // 模式卡片选中状态
+    $$('.mode-card').forEach(c => {
+      c.classList.toggle('selected', c.dataset.mode === selectedMode);
+    });
+    updatePopupUI();
+  }
+
+  function updatePopupUI() {
+    const btn = $('#btnLaunch');
+    const st = $('#popupStatus');
+    if (popupConnected) {
+      btn.textContent = '🔄 计时器运行中';
+      btn.classList.add('popup-open');
+      st.innerHTML = '<span class="dot"></span> 计时窗口已连接';
+    } else {
+      btn.textContent = '▶ 弹出计时器';
+      btn.classList.remove('popup-open');
+      st.innerHTML = '';
+    }
+  }
+
+  function togglePopup() {
+    if (popupConnected && popupWindow && !popupWindow.closed) {
+      // 弹窗已存在 → 聚焦
+      popupWindow.focus();
+      showToast('计时器窗口已打开');
+    } else {
+      openPopup();
+    }
+  }
+
+  function openPopup() {
+    const url = location.href.replace(location.search, '').replace(location.hash, '') + '?popup=1';
+    const w = 350, h = 480;
+    const left = Math.max(0, (screen.width - w) / 2);
+    const top = Math.max(0, (screen.height - h) / 2);
+
+    popupWindow = window.open(url, 'PomodoroTimer',
+      `width=${w},height=${h},left=${Math.round(left)},top=${Math.round(top)},` +
+      `resizable=yes,scrollbars=no,status=no,toolbar=no,menubar=no,location=no`
+    );
+
+    if (!popupWindow) {
+      showToast('⚠ 弹窗被拦截，请允许此网站弹出窗口');
+      return;
+    }
+
+    // 等待弹窗就绪后发送初始化消息
+    const readyHandler = (e) => {
+      if (e.data && e.data.type === 'popupReady') {
+        window.removeEventListener('message', readyHandler);
+        popupConnected = true;
+        updatePopupUI();
+
+        // 发送初始状态
+        if (channel) {
+          channel.postMessage({
+            type: 'init',
+            mode: selectedMode,
+            settings: getSettings(),
+          });
+        }
+        showToast('计时器窗口已就绪');
+      }
+    };
+    window.addEventListener('message', readyHandler);
+
+    // 超时处理
+    setTimeout(() => {
+      if (!popupConnected && popupWindow && !popupWindow.closed) {
+        // 手动假设就绪
+        popupConnected = true;
+        updatePopupUI();
+        if (channel) {
+          channel.postMessage({ type: 'init', mode: selectedMode, settings: getSettings() });
+        }
+      }
+    }, 1500);
+  }
+
+  function handleMainMessage(msg) {
+    switch (msg.type) {
+      case 'stateUpdate':
+        // 更新主窗口对弹出窗口状态的感知（可用于显示状态信息）
+        break;
+      case 'popupClosed':
+        popupConnected = false;
+        popupWindow = null;
+        updatePopupUI();
+        showToast('计时器窗口已关闭');
+        break;
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  弹出窗口逻辑
+  // ═══════════════════════════════════════════════
+  let timer = null;
+
+  function initPopup() {
+    timer = new PomodoroTimer();
+    applyAccent(selectedMode);
+
+    // 按钮事件
+    $('#popupBtnStart').addEventListener('click', () => timer.toggle());
+    $('#popupBtnReset').addEventListener('click', () => { timer.reset(); showToast('已重置'); });
+    $('#popupBtnSkip').addEventListener('click', () => {
+      if (timer.running || timer.remainingSeconds < timer.totalSeconds) {
+        timer.skip();
+        showToast('已跳过');
+      }
+    });
+
+    // 键盘
+    document.addEventListener('keydown', (e) => {
+      switch (e.code) {
+        case 'Space': e.preventDefault(); timer.toggle(); break;
+        case 'KeyR': e.preventDefault(); timer.reset(); showToast('已重置'); break;
+        case 'KeyS': e.preventDefault();
+          if (timer.running || timer.remainingSeconds < timer.totalSeconds) {
+            timer.skip(); showToast('已跳过');
+          }
+          break;
+      }
+    });
+
+    // 通知主窗口就绪
+    if (window.opener) {
+      window.opener.postMessage({ type: 'popupReady' }, '*');
+    }
+
+    // 窗口关闭通知
+    window.addEventListener('beforeunload', () => {
+      if (channel) channel.postMessage({ type: 'popupClosed' });
+    });
+
+    updatePopupTitle();
+  }
+
+  function handlePopupMessage(msg) {
+    if (!timer) return;
+    switch (msg.type) {
+      case 'init':
+      case 'switchMode':
+        selectedMode = msg.mode;
+        if (msg.settings) {
+          customSettings = { ...customSettings, ...msg.settings };
+        }
+        timer.setMode(msg.mode);
+        updatePopupTitle();
+        break;
+      case 'updateSettings':
+        if (msg.settings) {
+          customSettings = { ...customSettings, ...msg.settings };
+        }
+        timer.reset();
+        updatePopupTitle();
+        break;
+    }
+  }
+
+  function updatePopupTitle() {
+    const modeInfo = MODE_TYPES[selectedMode];
+    document.title = modeInfo.icon + ' ' + modeInfo.name + ' · 番茄钟';
+  }
+
+  // ═══════════════════════════════════════════════
+  //  设置面板
+  // ═══════════════════════════════════════════════
+  function syncSettingsToInputs() {
+    const s = customSettings;
+    setInputVal('setFocus', s.focus);
+    setInputVal('setShortBreak', s.shortBreak);
+    setInputVal('setLongBreak', s.longBreak);
+    setInputVal('setLongInterval', s.longInterval);
+  }
+
+  function readSettingsFromInputs() {
+    const def = MODE_DEFAULTS[selectedMode];
+    customSettings.focus       = CLAMP(parseInt($('#setFocus').value) || def.focus, 1, 180);
+    customSettings.shortBreak  = CLAMP(parseInt($('#setShortBreak').value) || def.shortBreak, 1, 60);
+    customSettings.longBreak   = CLAMP(parseInt($('#setLongBreak').value) || def.longBreak, 1, 120);
+    customSettings.longInterval = CLAMP(parseInt($('#setLongInterval').value) || def.longInterval, 1, 10);
+  }
+
+  function setInputVal(id, val) {
+    const el = $('#' + id);
+    if (el) el.value = val;
+  }
+
+  function openSettings() {
+    syncSettingsToInputs();
+    $('#settingsOverlay').classList.add('open');
+    $('#settingsPanel').classList.add('open');
+  }
+
+  function closeSettings() {
+    $('#settingsOverlay').classList.remove('open');
+    $('#settingsPanel').classList.remove('open');
+  }
+
+  function $$(sel) { return document.querySelectorAll(sel); }
+
+  // ═══════════════════════════════════════════════
+  //  启动
+  // ═══════════════════════════════════════════════
+  setupChannel();
+
+  if (IS_POPUP) {
+    // 弹出窗口：只显示弹出视图
+    $('#mainView').style.display = 'none';
+    $('#popupView').style.display = 'flex';
+    document.body.style.alignItems = 'flex-start';
+    document.body.style.paddingTop = '10px';
+    initPopup();
+  } else {
+    // 主窗口：只显示主视图
+    $('#popupView').style.display = 'none';
+    $('#mainView').style.display = 'flex';
+    initMain();
+  }
+
+  console.log(IS_POPUP ? '🍅 番茄钟 · 计时窗口' : '🍅 番茄钟 · 控制面板');
+})();
+</script>
+
+</body>
+</html>
